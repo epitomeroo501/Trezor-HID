@@ -1,60 +1,33 @@
 image: registry.gitlab.com/satoshilabs/trezor/trezor-firmware/environment
 
-.only_changes_core: &only_changes_core
-  only:
-    changes:
-      - ci/**/*
-      - common/**/*
-      - core/**/*
-      - crypto/**/*
-      - python/**/*
-      - storage/**/*
-      - tests/**/*
-      - tools/**/*
-      - vendor/**/*
-      - Pipfile.lock
-
-.only_changes_legacy: &only_changes_legacy
-  only:
-    changes:
-      - ci/**/*
-      - common/**/*
-      - crypto/**/*
-      - legacy/**/*
-      - python/**/*
-      - storage/**/*
-      - tests/**/*
-      - tools/**/*
-      - vendor/**/*
-      - Pipfile.lock
-
-
 # Core
 
-core unix unit test:
+core unit test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix regular build
   script:
     - cd core
     - pipenv run make test
 
-core unix device ui test:
+core device ui test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   script:
     - cd core
     - pipenv run make test_emu_ui
-    - cd ../ci
-    - pipenv run python prepare_ui_artifacts.py
+    - cd ..
+    - mv tests/ui_tests/reporting/reports/test/ test_ui_report
+    - pipenv run python ci/prepare_ui_artifacts.py
   artifacts:
-    name: core-unix-device-ui-test
+    name: core-device-ui-test
     paths:
       - ci/ui_test_records/
-      - tests/ui_tests/reports/
+      - test_ui_report
+      - tests/ui_tests/screens/
       - tests/junit.xml
       - tests/trezor.log
     when: always
@@ -62,9 +35,9 @@ core unix device ui test:
     reports:
       junit: tests/junit.xml
 
-core unix device test:
+core device test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   variables:
@@ -72,11 +45,9 @@ core unix device test:
   script:
     - cd core
     - pipenv run make test_emu
-    - sync
-    - sleep 1
     - mv ./src/.coverage .coverage.test_emu
   artifacts:
-    name: core-unix-device-test
+    name: core-device-test
     paths:
       - tests/trezor.log
       - tests/junit.xml
@@ -86,9 +57,9 @@ core unix device test:
     reports:
       junit: tests/junit.xml
 
-core unix btconly device test:
+core btconly device test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen btconly debug build
   variables:
@@ -98,7 +69,7 @@ core unix btconly device test:
     - cd core
     - pipenv run make test_emu
   artifacts:
-    name: core-unix-btconly-device-test
+    name: core-btconly-device-test
     paths:
       - tests/trezor.log
       - tests/junit.xml
@@ -107,24 +78,28 @@ core unix btconly device test:
     reports:
       junit: tests/junit.xml
 
-core unix monero test:
+core monero test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
+  variables:
+    TREZOR_PROFILING: 1
   script:
     - cd core
     - pipenv run make test_emu_monero
+    - mv ./src/.coverage .coverage.test_emu_monero
   artifacts:
-    name: core-unix-monero-test
+    name: core-monero-test
     paths:
       - tests/trezor.log
+      - core/.coverage.*
     expire_in: 1 week
     when: always
 
-core unix u2f test:
+core u2f test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   variables:
@@ -133,20 +108,18 @@ core unix u2f test:
     - make -C tests/fido_tests/u2f-tests-hid
     - cd core
     - pipenv run make test_emu_u2f
-    - sync
-    - sleep 1
     - mv ./src/.coverage .coverage.test_emu_u2f
   artifacts:
-    name: core-unix-u2f-test
+    name: core-u2f-test
     paths:
       - tests/trezor.log
       - core/.coverage.*
     expire_in: 1 week
     when: always
 
-core unix fido2 test:
+core fido2 test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   variables:
@@ -154,11 +127,9 @@ core unix fido2 test:
   script:
     - cd core
     - pipenv run make test_emu_fido2
-    - sync
-    - sleep 1
     - mv ./src/.coverage .coverage.test_emu_fido2
   artifacts:
-    name: core-unix-fido2-test
+    name: core-fido2-test
     paths:
       - tests/trezor.log
       - tests/junit.xml
@@ -168,16 +139,16 @@ core unix fido2 test:
       junit: tests/junit.xml
     when: always
 
-core unix click test:
+core click test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   script:
     - cd core
     - pipenv run make test_emu_click
   artifacts:
-    name: core-unix-click-test
+    name: core-click-test
     paths:
       - tests/trezor.log
       - tests/junit.xml
@@ -186,9 +157,9 @@ core unix click test:
     expire_in: 1 week
     when: always
 
-core unix upgrade test:
+core upgrade test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   variables:
@@ -197,7 +168,7 @@ core unix upgrade test:
     - tests/download_emulators.sh
     - pipenv run pytest --junitxml=tests/junit.xml tests/upgrade_tests
   artifacts:
-    name: core-unix-upgrade-test
+    name: core-upgrade-test
     paths:
       - tests/junit.xml
     reports:
@@ -205,15 +176,15 @@ core unix upgrade test:
     expire_in: 1 week
     when: always
 
-core unix persistence test:
+core persistence test:
   stage: test
-  <<: *only_changes_core
+  extends: .core_job
   dependencies:
     - core unix frozen debug build
   script:
     - pipenv run pytest --junitxml=tests/junit.xml tests/persistence_tests
   artifacts:
-    name: core-unix-persistence-test
+    name: core-persistence-test
     paths:
       - tests/junit.xml
     reports:
@@ -251,9 +222,9 @@ crypto test:
 
 # Legacy
 
-legacy emu test:
+legacy test:
   stage: test
-  <<: *only_changes_legacy
+  extends: .legacy_job
   dependencies:
     - legacy emu regular build
   variables:
@@ -270,9 +241,9 @@ legacy emu test:
     expire_in: 1 week
     when: always
 
-legacy emu btconly test:
+legacy btconly test:
   stage: test
-  <<: *only_changes_legacy
+  extends: .legacy_job
   dependencies:
     - legacy emu btconly build
   variables:
@@ -292,9 +263,9 @@ legacy emu btconly test:
     when: always
 
 
-legacy emu upgrade test:
+legacy upgrade test:
   stage: test
-  <<: *only_changes_legacy
+  extends: .legacy_job
   dependencies:
     - legacy emu regular build
   variables:

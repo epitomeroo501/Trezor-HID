@@ -33,6 +33,7 @@ from . import (
     cardano,
     cosi,
     crypto,
+    debug,
     device,
     eos,
     ethereum,
@@ -45,13 +46,13 @@ from . import (
     settings,
     stellar,
     tezos,
+    tron,
 )
 
 COMMAND_ALIASES = {
     "change-pin": settings.pin,
     "enable-passphrase": settings.passphrase_enable,
     "disable-passphrase": settings.passphrase_disable,
-    "set-passphrase-source": settings.passphrase_source,
     "wipe-device": device.wipe,
     "reset-device": device.setup,
     "recovery-device": device.recover,
@@ -59,6 +60,7 @@ COMMAND_ALIASES = {
     "sd-protect": device.sd_protect,
     "load-device": device.load,
     "self-test": device.self_test,
+    "show-text": debug.show_text,
     "get-entropy": crypto.get_entropy,
     "encrypt-keyvalue": crypto.encrypt_keyvalue,
     "decrypt-keyvalue": crypto.decrypt_keyvalue,
@@ -71,6 +73,7 @@ COMMAND_ALIASES = {
     "xrp": ripple.cli,
     "xlm": stellar.cli,
     "xtz": tezos.cli,
+    "trx": tron.cli,
 }
 
 
@@ -141,10 +144,26 @@ def configure_logging(verbose: int):
 @click.option(
     "-j", "--json", "is_json", is_flag=True, help="Print result as JSON object"
 )
+@click.option(
+    "-P", "--passphrase-on-host", is_flag=True, help="Enter passphrase on host.",
+)
+@click.option(
+    "-s",
+    "--session-id",
+    metavar="HEX",
+    help="Resume given session ID.",
+    default=os.environ.get("TREZOR_SESSION_ID"),
+)
 @click.version_option()
 @click.pass_context
-def cli(ctx, path, verbose, is_json):
+def cli(ctx, path, verbose, is_json, passphrase_on_host, session_id):
     configure_logging(verbose)
+
+    if session_id:
+        try:
+            session_id = bytes.fromhex(session_id)
+        except ValueError:
+            raise click.ClickException("Not a valid session id: {}".format(session_id))
 
     def get_device():
         try:
@@ -157,13 +176,17 @@ def cli(ctx, path, verbose, is_json):
                 if path is not None:
                     click.echo("Using path: {}".format(path))
                 sys.exit(1)
-        return TrezorClient(transport=device, ui=ui.ClickUI())
+        return TrezorClient(
+            transport=device,
+            ui=ui.ClickUI(passphrase_on_host=passphrase_on_host),
+            session_id=session_id,
+        )
 
     ctx.obj = get_device
 
 
 @cli.resultcallback()
-def print_result(res, path, verbose, is_json):
+def print_result(res, is_json, **kwargs):
     if is_json:
         if isinstance(res, protobuf.MessageType):
             click.echo(json.dumps({res.__class__.__name__: res.__dict__}))
@@ -200,7 +223,7 @@ def list_devices():
 @cli.command()
 def version():
     """Show version of trezorctl/trezorlib."""
-    from trezorlib import __version__ as VERSION
+    from .. import __version__ as VERSION
 
     return VERSION
 
@@ -213,17 +236,36 @@ def version():
 @cli.command()
 @click.argument("message")
 @click.option("-b", "--button-protection", is_flag=True)
-@click.option("-p", "--pin-protection", is_flag=True)
-@click.option("-r", "--passphrase-protection", is_flag=True)
 @click.pass_obj
-def ping(connect, message, button_protection, pin_protection, passphrase_protection):
+def ping(connect, message, button_protection):
     """Send ping message."""
-    return connect().ping(
-        message,
-        button_protection=button_protection,
-        pin_protection=pin_protection,
-        passphrase_protection=passphrase_protection,
-    )
+    return connect().ping(message, button_protection=button_protection)
+
+
+@cli.command()
+@click.pass_obj
+def get_session(connect):
+    """Get a session ID for subsequent commands.
+
+    Unlocks Trezor with a passphrase and returns a session ID. Use this session ID with
+    `trezorctl -s SESSION_ID`, or set it to an environment variable `TREZOR_SESSION_ID`,
+    to avoid having to enter passphrase for subsequent commands.
+
+    The session ID is valid until another client starts using Trezor, until the next
+    get-session call, or until Trezor is disconnected.
+    """
+    from ..btc import get_address
+    from ..client import PASSPHRASE_TEST_PATH
+
+    client = connect()
+    if client.features.model == "1" and client.version < (1, 9, 0):
+        raise click.ClickException("Upgrade your firmware to enable session support.")
+
+    get_address(client, "Testnet", PASSPHRASE_TEST_PATH)
+    if client.session_id is None:
+        raise click.ClickException("Passphrase not enabled or firmware too old.")
+    else:
+        return client.session_id.hex()
 
 
 @cli.command()
@@ -294,9 +336,10 @@ cli.add_command(ripple.cli)
 cli.add_command(settings.cli)
 cli.add_command(stellar.cli)
 cli.add_command(tezos.cli)
+cli.add_command(tron.cli)
 
 cli.add_command(firmware.firmware_update)
-
+cli.add_command(debug.cli)
 
 #
 # Main

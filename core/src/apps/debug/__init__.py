@@ -17,6 +17,7 @@ if __debug__:
         from trezor.messages.DebugLinkRecordScreen import DebugLinkRecordScreen
         from trezor.messages.DebugLinkReseedRandom import DebugLinkReseedRandom
         from trezor.messages.DebugLinkState import DebugLinkState
+        from trezor.messages.DebugLinkEraseSdCard import DebugLinkEraseSdCard
 
     save_screen = False
     save_screen_directory = "."
@@ -97,13 +98,12 @@ if __debug__:
         ctx: wire.Context, msg: DebugLinkGetState
     ) -> DebugLinkState:
         from trezor.messages.DebugLinkState import DebugLinkState
-        from storage.device import has_passphrase
-        from apps.common import mnemonic
+        from apps.common import mnemonic, passphrase
 
         m = DebugLinkState()
         m.mnemonic_secret = mnemonic.get_secret()
         m.mnemonic_type = mnemonic.get_type()
-        m.passphrase_protection = has_passphrase()
+        m.passphrase_protection = passphrase.is_enabled()
         m.reset_entropy = reset_internal_entropy
 
         if msg.wait_layout or current_content is None:
@@ -139,13 +139,35 @@ if __debug__:
             crypto.random.reseed(msg.value)
         return Success()
 
+    async def dispatch_DebugLinkEraseSdCard(
+        ctx: wire.Context, msg: DebugLinkEraseSdCard
+    ) -> Success:
+        try:
+            io.sdcard.power_on()
+            if msg.format:
+                io.fatfs.mkfs()
+            else:
+                # trash first 1 MB of data to destroy the FAT filesystem
+                assert io.sdcard.capacity() >= 1024 * 1024
+                empty_block = bytes([0xFF] * io.sdcard.BLOCK_SIZE)
+                for i in range(1024 * 1024 // io.sdcard.BLOCK_SIZE):
+                    io.sdcard.write(i, empty_block)
+
+        except OSError:
+            raise wire.ProcessError("SD card operation failed")
+        finally:
+            io.sdcard.power_off()
+        return Success()
+
     def boot() -> None:
         # wipe storage when debug build is used on real hardware
         if not utils.EMULATOR:
             config.wipe()
 
         wire.add(MessageType.LoadDevice, __name__, "load_device")
+        wire.add(MessageType.DebugLinkShowText, __name__, "show_text")
         wire.register(MessageType.DebugLinkDecision, dispatch_DebugLinkDecision)
         wire.register(MessageType.DebugLinkGetState, dispatch_DebugLinkGetState)
         wire.register(MessageType.DebugLinkReseedRandom, dispatch_DebugLinkReseedRandom)
         wire.register(MessageType.DebugLinkRecordScreen, dispatch_DebugLinkRecordScreen)
+        wire.register(MessageType.DebugLinkEraseSdCard, dispatch_DebugLinkEraseSdCard)

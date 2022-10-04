@@ -14,7 +14,7 @@ async def require_confirm_tx(ctx, to, value):
     text.bold(format_tezos_amount(value))
     text.normal("to")
     text.mono(*split_address(to))
-    return await require_confirm(ctx, text, ButtonRequestType.SignTx)
+    await require_confirm(ctx, text, ButtonRequestType.SignTx)
 
 
 async def require_confirm_fee(ctx, value, fee):
@@ -30,7 +30,7 @@ async def require_confirm_origination(ctx, address):
     text = Text("Confirm origination", ui.ICON_SEND, ui.ORANGE)
     text.normal("Address:")
     text.mono(*split_address(address))
-    return await require_confirm(ctx, text, ButtonRequestType.SignTx)
+    await require_confirm(ctx, text, ButtonRequestType.SignTx)
 
 
 async def require_confirm_origination_fee(ctx, balance, fee):
@@ -46,7 +46,7 @@ async def require_confirm_delegation_baker(ctx, baker):
     text = Text("Confirm delegation", ui.ICON_SEND, ui.BLUE)
     text.normal("Baker address:")
     text.mono(*split_address(baker))
-    return await require_confirm(ctx, text, ButtonRequestType.SignTx)
+    await require_confirm(ctx, text, ButtonRequestType.SignTx)
 
 
 async def require_confirm_set_delegate(ctx, fee):
@@ -103,14 +103,14 @@ async def require_confirm_proposals(ctx, proposals):
 
 
 async def require_confirm_delegation_manager_withdraw(ctx, address):
-    text = Text("Cancel delegation", ui.ICON_RECEIVE, icon_color=ui.RED)
+    text = Text("Remove delegation", ui.ICON_RECEIVE, icon_color=ui.RED)
     text.bold("Delegator:")
     text.mono(*split_address(address))
     await require_confirm(ctx, text, ButtonRequestType.SignTx)
 
 
 async def require_confirm_manager_remove_delegate(ctx, fee):
-    text = Text("Cancel delegation", ui.ICON_RECEIVE, ui.RED)
+    text = Text("Remove delegation", ui.ICON_RECEIVE, ui.RED)
     text.normal("Fee:")
     text.bold(format_tezos_amount(fee))
     await require_hold_to_confirm(ctx, text, ButtonRequestType.SignTx)
